@@ -186,10 +186,39 @@ export const Chatroom = ({ chatroom, userId, socket, setMsgNotifs, apiroot, newC
         val[`${hash}`] = encData["masterSec"];
         outMsgKeys.current = {...outMsgKeys.current, ...val};
 
+        const pendingMessage = {
+            _id: "pending_" + new Date().getTime(),
+            content: values.msg,
+            send: userId,
+            pending: true,
+            timestamp: timestamp.toJSON(),
+            hash: hash
+        };
+
+        setMessages((prevMessages) => [...prevMessages, pendingMessage])
+
         socket.emit("chatroomMessage", {
             "chatroomId": chatroom._id,
             "message": payload
-        });
+        },
+            (ackReponse) => {
+                if (ackReponse && ackReponse.status === "ok" && ackResponse.messageData) {
+                    setMessages((prevMessages) =>
+                        prevMessages.map((msg) => {
+                            if (msg._id === pendingMessage._id) {
+                                return {...ackResponse.messageData, pending: false};
+                            }
+                            return msg;
+                        })
+                    );
+                }   else {
+                    setMessages((prevMessages) =>
+                        prevMessages.filter((msg) => msg._id !== pendingMessage._id)
+                    );
+                    toast.error("Message sending failed. Please try again.");
+                    }
+                }
+            ); 
 
         form.reset();
         msgInputRef.current.focus();
@@ -204,7 +233,7 @@ export const Chatroom = ({ chatroom, userId, socket, setMsgNotifs, apiroot, newC
             <h1 className="text-center text-4xl font-bold mb-10 text-green-600">Chatroom</h1>
             <div className="flex-1 overflow-y-scroll p-5 box-border">
                 {messages == null || messages.length == 0 ? 'No chats to show' : messages.map((msg) => (
-                    <Message content={msg.content} isSender={msg.sender == userId} key={msg.mongoId}/>
+                    <Message content={msg.content} isSender={msg.sender == userId} key={msg.mongoId} pending={msg.pending}/>
                 ))}
                 <div ref={chatBottom}/>
             </div>

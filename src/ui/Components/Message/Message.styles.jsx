@@ -8,4 +8,5 @@ export const Bubble = styled.div`
     word-wrap: break-word;
     overflow-wrap: break-word;
     box-sizing: border-box;
+    opacity: ${({ pending }) => (pending ? 0.5 : 1)};
 `
