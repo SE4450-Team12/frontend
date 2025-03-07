@@ -317,7 +317,31 @@ b	256 //max byte?
 // else:
 // 	a = k (mod q)
 // return A, a
+func calculate_key_pair(priv *ecdh.PrivateKey) (*edwards25519.Point, *edwards25519.Scalar) {
+	var B edwards25519.Point
+	var a edwards25519.Scalar
 
+	k, err := (&edwards25519.Scalar{}).SetBytesWithClamping(priv.Bytes())
+	if err != nil {
+		return nil, nil
+	}
+
+	E := B.ScalarBaseMult(k).Bytes()
+
+	if ((E[31] & 0x80) >> 7) == 1 {
+		a.Negate(k)
+		// Set sig bit to 0
+		E[31] &= 0x7F
+	} else {
+		a.Set(k)
+	}
+
+	A, err := (&edwards25519.Point{}).SetBytes(E)
+	if err != nil {
+		return nil, nil
+	}
+	return A, &a
+}
 
 // convert_mont(u):
 // umasked = u (mod 2|p|)
