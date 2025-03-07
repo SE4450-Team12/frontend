@@ -110,7 +110,7 @@ func print_X3DH_diff(alice, bob Person){
 	fmt.Println(alice.name)
 	fmt.Println(alice.IK)
 	fmt.Println(alice.EK)
-	fmt.Println(alice.ScK)
+	fmt.Println(alice.SPK)
 	fmt.Println(alice.OPK)
 	fmt.Println(alice.Xdh1)
 	fmt.Println(alice.Xdh2)
@@ -123,7 +123,7 @@ func print_X3DH_diff(alice, bob Person){
 	fmt.Println(bob.name)
 	fmt.Println(bob.IK)
 	fmt.Println(bob.EK)
-	fmt.Println(bob.ScK)
+	fmt.Println(bob.SPK)
 	fmt.Println(bob.OPK)
 	fmt.Println(bob.Xdh1)
 	fmt.Println(bob.Xdh2)
@@ -136,7 +136,7 @@ func print_X3DH_diff(alice, bob Person){
 	fmt.Println("name:", alice.name == bob.name)
 	fmt.Println("IK:", alice.IK.Equal(bob.IK))
 	fmt.Println("EK:", alice.EK.Equal(bob.EK))
-	fmt.Println("ScK:", alice.ScK.Equal(bob.ScK))
+	fmt.Println("SPK:", alice.SPK.Equal(bob.SPK))
 	fmt.Println("OPK:", alice.OPK.Equal(bob.OPK))
 	fmt.Println("Xdh1:", bytes.Equal(alice.Xdh1, bob.Xdh1))
 	fmt.Println("Xdh2:", bytes.Equal(alice.Xdh2, bob.Xdh2))
@@ -185,7 +185,7 @@ type Ratchet struct{
 type Person struct{
 	name string
 
-	IK, EK, ScK, OPK *ecdh.PrivateKey
+	IK, EK, SPK, OPK *ecdh.PrivateKey
 	schnorrProof [][]byte
 	Xdh1, Xdh2, Xdh3, Xdh4 []byte
 	x, SK, AD []byte
@@ -203,14 +203,22 @@ func (person *Person) key_gen(){
 	curve := ecdh.X25519()
 	person.IK, _ = curve.GenerateKey(rand.Reader)
 	person.EK, _ = curve.GenerateKey(rand.Reader)
-	person.ScK, _ = curve.GenerateKey(rand.Reader)
+	person.SPK, _ = curve.GenerateKey(rand.Reader)
 	person.OPK, _ = curve.GenerateKey(rand.Reader)
 	person.myDH, _ = curve.GenerateKey(rand.Reader)
 
+	//Sign(rand io.Reader, k *ecdh.PrivateKey, M []byte) -> [64]byte
+	sig := Sign(rand.Reader, person.SPK, person.IK.PublicKey().Bytes())
+	fmt.Println(sig[:keySize])
+	fmt.Println(sig[keySize:])
+	fmt.Println(len(sig))
 
+	//Verify(u *ecdh.PublicKey, M, signature []byte) -> bool
+	ver := Verify(person.SPK.PublicKey(), person.IK.PublicKey().Bytes(), sig)
+	fmt.Println(ver)
 
 	/**
-		c := sha256.Sum256(append(append(person.ScK.PublicKey().Bytes(), person.IK.PublicKey().Bytes()...), curve25519.Basepoint...))
+		c := sha256.Sum256(append(append(person.SPK.PublicKey().Bytes(), person.IK.PublicKey().Bytes()...), curve25519.Basepoint...))
 		// cNum := new(big.Int).SetBytes(c[:])
 		// cNum.Mod(cNum, p)
 		// xMul, err := curve25519.X25519(c[:], person.IK.Bytes())
@@ -225,9 +233,9 @@ func (person *Person) key_gen(){
 		xMul.Mul(xMul, ikNum)
 		xMul.Mod(xMul, p)
 		// xNum := new(big.Int).SetBytes(xMul[:])
-		scKNum := new(big.Int).SetBytes(person.ScK.Bytes()[:])
-		scKNum.Mod(scKNum, p)
-		xMul.Add(xMul, scKNum)
+		SPKNum := new(big.Int).SetBytes(person.SPK.Bytes()[:])
+		SPKNum.Mod(SPKNum, p)
+		xMul.Add(xMul, SPKNum)
 		xMul.Mod(xMul, p)
 
 		person.x = xMul.Bytes()
@@ -238,7 +246,7 @@ func (person *Person) key_gen(){
 		fmt.Println(person.x)
 		fmt.Println()
 		// 9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-		// person.schnorrProof = append(person.schnorrProof, curve25519.Basepoint, person.IK.PublicKey().Bytes(), person.ScK.PublicKey().Bytes(), person.x)
+		// person.schnorrProof = append(person.schnorrProof, curve25519.Basepoint, person.IK.PublicKey().Bytes(), person.SPK.PublicKey().Bytes(), person.x)
 		// 148,82,156,147,219,75,41,147,63,124,134,21,102,138,155,219,26,12,30,26,86,68,83,138,46,215,40,248,210,34,244
 
 		cIK, err := curve25519.X25519(c[:], person.IK.PublicKey().Bytes())
@@ -250,7 +258,7 @@ func (person *Person) key_gen(){
 		fmt.Println()
 		cIKNum := new(big.Int).SetBytes(cIK[:])
 		cIKNum.Mod(cIKNum, p)
-		scPKNum := new(big.Int).SetBytes(person.ScK.PublicKey().Bytes()[:])
+		scPKNum := new(big.Int).SetBytes(person.SPK.PublicKey().Bytes()[:])
 		scPKNum.Mod(scPKNum, p)
 		cIKNum.Add(cIKNum, scPKNum)
 		cIKNum.Mod(cIKNum, p)
@@ -480,17 +488,17 @@ func u_to_y(u *field.Element) *field.Element {
 
 
 func (person *Person) X3DH_send(otherPerson Person){
-	person.Xdh1, _ = person.IK.ECDH(otherPerson.ScK.PublicKey())
+	person.Xdh1, _ = person.IK.ECDH(otherPerson.SPK.PublicKey())
 	person.Xdh2, _ = person.EK.ECDH(otherPerson.IK.PublicKey())
-	person.Xdh3, _ = person.EK.ECDH(otherPerson.ScK.PublicKey())
+	person.Xdh3, _ = person.EK.ECDH(otherPerson.SPK.PublicKey())
 	person.Xdh4, _ = person.EK.ECDH(otherPerson.OPK.PublicKey())
 	person.SK = hkdf_output(keySize, sha256.New, append(append(append(person.Xdh1, person.Xdh2...), person.Xdh3...), person.Xdh4...), nil, nil)
 	person.AD = append(person.IK.PublicKey().Bytes(), otherPerson.IK.PublicKey().Bytes()...)
 }
 
 func (person *Person) X3DH_recv(otherPerson Person){
-	person.Xdh1, _ = person.ScK.ECDH(otherPerson.IK.PublicKey())
-	person.Xdh3, _ = person.ScK.ECDH(otherPerson.EK.PublicKey())
+	person.Xdh1, _ = person.SPK.ECDH(otherPerson.IK.PublicKey())
+	person.Xdh3, _ = person.SPK.ECDH(otherPerson.EK.PublicKey())
 	person.Xdh2, _ = person.IK.ECDH(otherPerson.EK.PublicKey())
 	person.Xdh4, _ = person.OPK.ECDH(otherPerson.EK.PublicKey())
 	person.SK = hkdf_output(keySize, sha256.New, append(append(append(person.Xdh1, person.Xdh2...), person.Xdh3...), person.Xdh4...), nil, nil)
