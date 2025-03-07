@@ -5,18 +5,25 @@ import (
 	// "encoding/binary"
 	"encoding/base64"
 	"encoding/hex"
+	"crypto/aes"
 	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/aes"
+	"crypto/sha512"
+	"crypto/subtle"
 	"crypto/cipher"
+	// "crypto/ed25519"
 	"math/big"
 	"bytes"
 	"hash"
 	"math"
 	"io"
+	
 	"golang.org/x/crypto/hkdf"
 	// "golang.org/x/crypto/curve25519"
+
+	"filippo.io/edwards25519"
+	"filippo.io/edwards25519/field"
 )
 
 func main() {
@@ -167,6 +174,7 @@ func print_ratchet_diff(alice, bob Person){
 }
 
 var keySize = 32
+var one = (&field.Element{}).One()
 var pF = math.Pow(2, 255) - 19
 var p = new(big.Int)
 var _, _ = new(big.Float).SetFloat64(pF).Int(p)
@@ -198,118 +206,136 @@ func (person *Person) key_gen(){
 	person.ScK, _ = curve.GenerateKey(rand.Reader)
 	person.OPK, _ = curve.GenerateKey(rand.Reader)
 	person.myDH, _ = curve.GenerateKey(rand.Reader)
-	/*
-	c := sha256.Sum256(append(append(person.ScK.PublicKey().Bytes(), person.IK.PublicKey().Bytes()...), curve25519.Basepoint...))
-	// cNum := new(big.Int).SetBytes(c[:])
-	// cNum.Mod(cNum, p)
-	// xMul, err := curve25519.X25519(c[:], person.IK.Bytes())
-	// if err != nil {
-		// 	fmt.Println("err: ", err)
-		// }
-		
-	xMul := new(big.Int).SetBytes(c[:])
-	xMul.Mod(xMul, p)
-	ikNum := new(big.Int).SetBytes(person.IK.Bytes()[:])
-	ikNum.Mod(ikNum, p)
-	xMul.Mul(xMul, ikNum)
-	xMul.Mod(xMul, p)
-	// xNum := new(big.Int).SetBytes(xMul[:])
-	scKNum := new(big.Int).SetBytes(person.ScK.Bytes()[:])
-	scKNum.Mod(scKNum, p)
-	xMul.Add(xMul, scKNum)
-	xMul.Mod(xMul, p)
 
-	person.x = xMul.Bytes()
-	for len(person.x) < 32 {
-		person.x = append([]byte{0}, person.x...)
-	}
-	fmt.Println(len(person.x))
-	fmt.Println(person.x)
-	fmt.Println()
-	// 9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	// person.schnorrProof = append(person.schnorrProof, curve25519.Basepoint, person.IK.PublicKey().Bytes(), person.ScK.PublicKey().Bytes(), person.x)
-	// 148,82,156,147,219,75,41,147,63,124,134,21,102,138,155,219,26,12,30,26,86,68,83,138,46,215,40,248,210,34,244
 
-	cIK, err := curve25519.X25519(c[:], person.IK.PublicKey().Bytes())
-	if err != nil {
-		fmt.Println("err: ", err)
-	}
-	fmt.Println(len(cIK))
-	fmt.Println(cIK)
-	fmt.Println()
-	cIKNum := new(big.Int).SetBytes(cIK[:])
-	cIKNum.Mod(cIKNum, p)
-	scPKNum := new(big.Int).SetBytes(person.ScK.PublicKey().Bytes()[:])
-	scPKNum.Mod(scPKNum, p)
-	cIKNum.Add(cIKNum, scPKNum)
-	cIKNum.Mod(cIKNum, p)
-	cIKA := cIKNum.Bytes()
-	for len(cIKA) < 32 {
-		cIKA = append([]byte{0}, cIKA...)
-	}
-	fmt.Println(len(cIKA))
-	fmt.Println(cIKA)
 
-	xG, err := curve25519.X25519(person.x, curve25519.Basepoint)
-	if err != nil {
-		fmt.Println("err: ", err)
-	}
-	fmt.Println(len(xG))
-	fmt.Println(xG)
-	fmt.Println()
-	fmt.Println()
+	/**
+		c := sha256.Sum256(append(append(person.ScK.PublicKey().Bytes(), person.IK.PublicKey().Bytes()...), curve25519.Basepoint...))
+		// cNum := new(big.Int).SetBytes(c[:])
+		// cNum.Mod(cNum, p)
+		// xMul, err := curve25519.X25519(c[:], person.IK.Bytes())
+		// if err != nil {
+			// 	fmt.Println("err: ", err)
+			// }
+			
+		xMul := new(big.Int).SetBytes(c[:])
+		xMul.Mod(xMul, p)
+		ikNum := new(big.Int).SetBytes(person.IK.Bytes()[:])
+		ikNum.Mod(ikNum, p)
+		xMul.Mul(xMul, ikNum)
+		xMul.Mod(xMul, p)
+		// xNum := new(big.Int).SetBytes(xMul[:])
+		scKNum := new(big.Int).SetBytes(person.ScK.Bytes()[:])
+		scKNum.Mod(scKNum, p)
+		xMul.Add(xMul, scKNum)
+		xMul.Mod(xMul, p)
+
+		person.x = xMul.Bytes()
+		for len(person.x) < 32 {
+			person.x = append([]byte{0}, person.x...)
+		}
+		fmt.Println(len(person.x))
+		fmt.Println(person.x)
+		fmt.Println()
+		// 9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+		// person.schnorrProof = append(person.schnorrProof, curve25519.Basepoint, person.IK.PublicKey().Bytes(), person.ScK.PublicKey().Bytes(), person.x)
+		// 148,82,156,147,219,75,41,147,63,124,134,21,102,138,155,219,26,12,30,26,86,68,83,138,46,215,40,248,210,34,244
+
+		cIK, err := curve25519.X25519(c[:], person.IK.PublicKey().Bytes())
+		if err != nil {
+			fmt.Println("err: ", err)
+		}
+		fmt.Println(len(cIK))
+		fmt.Println(cIK)
+		fmt.Println()
+		cIKNum := new(big.Int).SetBytes(cIK[:])
+		cIKNum.Mod(cIKNum, p)
+		scPKNum := new(big.Int).SetBytes(person.ScK.PublicKey().Bytes()[:])
+		scPKNum.Mod(scPKNum, p)
+		cIKNum.Add(cIKNum, scPKNum)
+		cIKNum.Mod(cIKNum, p)
+		cIKA := cIKNum.Bytes()
+		for len(cIKA) < 32 {
+			cIKA = append([]byte{0}, cIKA...)
+		}
+		fmt.Println(len(cIKA))
+		fmt.Println(cIKA)
+
+		xG, err := curve25519.X25519(person.x, curve25519.Basepoint)
+		if err != nil {
+			fmt.Println("err: ", err)
+		}
+		fmt.Println(len(xG))
+		fmt.Println(xG)
+		fmt.Println()
+		fmt.Println()
 	*/
 }
 
+
 /*
-B	convert_mont(9)
+B	convert_mont(9) //from curve25519 basepoint to edwards basepoint
 I	(x=0, y=1)
-p	2255 - 19
-q	2252 + 27742317777372353535851937790883648493
-c	8
+p	2^255 - 19
+q	2^252 + 27742317777372353535851937790883648493 //ristretto255??
+c	8 //group order?
 d	-121665 / 121666 (mod p)
-A	486662
-n	2
-|p|	255
-|q|	253
-b	256
-
-xeddsa_sign(k, M, Z):
-    A, a = calculate_key_pair(k)
-    r = hash1(a || M || Z) (mod q)
-    R = rB
-    h = hash(R || A || M) (mod q)
-    s = r + ha (mod q)
-    return R || s
-
-calculate_key_pair(k):
-    E = kB
-    A.y = E.y
-    A.s = 0
-    if E.s == 1:
-        a = -k (mod q)
-    else:
-        a = k (mod q)
-    return A, a
-
-xeddsa_verify(u, M, (R || s)):
-    if u >= p or R.y >= 2|p| or s >= 2|q|:
-        return false
-    A = convert_mont(u)
-    if not on_curve(A):
-        return false
-    h = hash(R || A || M) (mod q)
-    Rcheck = sB - hA
-    if bytes_equal(R, Rcheck):
-        return true
-    return false
-
-convert_mont(u):
-    umasked = u (mod 2|p|)
-    P.y = u_to_y(umasked)
-    P.s = 0
-    return P
+A	486662 //from curve25519 formula 
+n	2 //?
+|p|	255 //group order?
+|q|	253 //group order?
+b	256 //max byte?
 */
+
+// xeddsa_verify(u, M, (R || s)):
+// if u >= p or R.y >= 2|p| or s >= 2|q|:
+// return false
+// A = convert_mont(u)
+// if not on_curve(A):
+// return false
+// h = hash(R || A || M) (mod q)
+// Rcheck = sB - hA
+// if bytes_equal(R, Rcheck):
+// return true/false
+
+
+// xeddsa_sign(k, M, Z):
+// A, a = calculate_key_pair(k)
+// r = hash1(a || M || Z) (mod q)
+// R = rB
+// h = hash(R || A || M) (mod q)
+// s = r + ha (mod q)
+// return R || s
+
+
+// calculate_key_pair(k):
+// E = kB
+// A.y = E.y
+// A.s = 0
+// if E.s == 1:
+// 	a = -k (mod q)
+// else:
+// 	a = k (mod q)
+// return A, a
+
+
+// convert_mont(u):
+// umasked = u (mod 2|p|)
+// P.y = u_to_y(umasked)
+// P.s = 0
+// return P
+
+
+// The twisted Edwards curve equation is -x2 + y2 = 1 + dx2y2. 
+// The u_to_y function implements the birational map 
+// by calculating y = ( u - 1) * inv( u + 1) (mod p).
+func u_to_y(u *field.Element) *field.Element {
+	a := new(field.Element).Subtract(u, one)
+	b := new(field.Element).Add(u, one)
+	y := new(field.Element).Multiply(a, b.Invert(b))
+	return y
+}
+
 
 func (person *Person) X3DH_send(otherPerson Person){
 	person.Xdh1, _ = person.IK.ECDH(otherPerson.ScK.PublicKey())
