@@ -306,7 +306,67 @@ b	256 //max byte?
 // h = hash(R || A || M) (mod q)
 // s = r + ha (mod q)
 // return R || s
+func Sign(rand io.Reader, k *ecdh.PrivateKey, M []byte) []byte {
+	if len(k.Bytes()) != keySize {
+		fmt.Println("bad x25519 private key length\ngiven length:", len(k.Bytes()), "bytes  expected length:", keySize, "bytes")
+		return nil
+	}
 
+	A, a := calculate_key_pair(k)
+	if A == nil || a == nil {
+		return nil
+	}
+
+	random := make([]byte, keySize*2)
+	if _, err := io.ReadFull(rand, random); err != nil {
+		return nil
+	}
+
+	// Using same prefix in libsignal-protocol-c implementation, but can be any
+	// 32 byte prefix. Golang's ed25519 implementation uses:
+	//
+	//   ph := sha512.Sum512(a.Bytes())
+	//   prefix := ph[32:]
+	prefix := [32]byte{
+		0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	}
+
+	rHash := sha512.New()
+	rHash.Write(prefix[:])
+	rHash.Write(a.Bytes())
+	rHash.Write(M)
+	rHash.Write(random)//Z
+	rDigest := make([]byte, 0, sha512.Size)
+	rDigest = rHash.Sum(rDigest)
+
+	r, err := edwards25519.NewScalar().SetUniformBytes(rDigest)
+	if err != nil {
+		return nil
+	}
+
+	R := (&edwards25519.Point{}).ScalarBaseMult(r)
+
+	hHash := sha512.New()
+	hHash.Write(R.Bytes())
+	hHash.Write(A.Bytes())
+	hHash.Write(M)
+	hDigest := make([]byte, 0, sha512.Size)
+	hDigest = hHash.Sum(hDigest)
+	h, err := edwards25519.NewScalar().SetUniformBytes(hDigest)
+	if err != nil {
+		return nil
+	}
+
+	s := (&edwards25519.Scalar{}).Add(r, h.Multiply(h, a))
+
+	signature := make([]byte, keySize*2)
+	copy(signature[:keySize], R.Bytes())
+	copy(signature[keySize:], s.Bytes())
+	return signature
+}
 
 // calculate_key_pair(k):
 // E = kB
