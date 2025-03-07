@@ -324,7 +324,25 @@ b	256 //max byte?
 // P.y = u_to_y(umasked)
 // P.s = 0
 // return P
+func convert_mont(u *ecdh.PublicKey) *edwards25519.Point {
+	umasked, err := (&field.Element{}).SetBytes(u.Bytes())
+	if err != nil {
+		return nil
+	}
 
+	// y = (u - 1)/(u + 1)
+	y := u_to_y(umasked).Bytes()
+
+	// Set sign to 0
+	y[31] &= 0x7F
+
+	P, err := (&edwards25519.Point{}).SetBytes(y)
+	if err != nil {
+		return nil
+	}
+
+	return P
+}
 
 // The twisted Edwards curve equation is -x2 + y2 = 1 + dx2y2. 
 // The u_to_y function implements the birational map 
