@@ -297,7 +297,47 @@ b	256 //max byte?
 // Rcheck = sB - hA
 // if bytes_equal(R, Rcheck):
 // return true/false
+func Verify(u *ecdh.PublicKey, M, signature []byte) bool {
+	if len(u.Bytes()) != keySize {
+		fmt.Println("bad x25519 public key length\ngiven length:", len(u.Bytes()), "bytes  expected length:", keySize, "bytes")
+		return false
+	}
 
+	if len(signature) != keySize*2 || signature[63]&0xE0 != 0 {
+		return false
+	}
+
+	A := convert_mont(u)
+
+	if A == nil {
+		return false
+	}
+
+	// if not on_curve(A): missing?
+
+	hHash := sha512.New()
+	hHash.Write(signature[:keySize])//R
+	hHash.Write(A.Bytes())
+	hHash.Write(M)
+	hDigest := make([]byte, 0, sha512.Size)
+	hDigest = hHash.Sum(hDigest)
+	h, err := edwards25519.NewScalar().SetUniformBytes(hDigest)
+	if err != nil {
+		return false
+	}
+
+	//SetCanonicalBytes() should equal B=convert_mont(9) point Multiply with s=signature[keySize:]
+	sB, err := edwards25519.NewScalar().SetCanonicalBytes(signature[keySize:])
+	if err != nil {
+		return false
+	}
+
+	minusA := (&edwards25519.Point{}).Negate(A)
+	// Rcheck = sB - hA
+	//VarTimeDoubleScalarBaseMult ???
+	Rcheck := (&edwards25519.Point{}).VarTimeDoubleScalarBaseMult(h, minusA, sB)
+	return subtle.ConstantTimeCompare(signature[:keySize], Rcheck.Bytes()) == 1
+}
 
 // xeddsa_sign(k, M, Z):
 // A, a = calculate_key_pair(k)
