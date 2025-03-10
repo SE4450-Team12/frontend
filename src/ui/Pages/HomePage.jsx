@@ -105,7 +105,6 @@ export const HomePage = ({ loggedIn, username, userId, apiroot }) => {
         });
 
         socket.on("chatroomDeleted", (data) => {
-            console.log("Chatroom deleted:", data);
             setChatrooms((prevChatrooms) =>
               prevChatrooms.filter((chatroom) => chatroom._id !== data.message)
             );
